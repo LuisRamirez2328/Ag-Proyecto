@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Asignación de Tareas</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+<div class="container">
+    <h1>Sistema de Asignación de Tareas</h1>
+    
+    <div class="card mb-3">
+        <div class="card-header">Agregar Tarea</div>
+        <div class="card-body">
+            <form id="tareaForm">
+                <div class="form-group">
+                    <label for="nombre_tarea">Nombre de la tarea:</label>
+                    <input type="text" id="nombre_tarea" name="nombre_tarea" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="horas_estimadas">Horas estimadas:</label>
+                    <input type="text" id="horas_estimadas" name="horas_estimadas" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Habilidades:</label><br>
+                    {% for habilidad in habilidades_lista %}
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" name="habilidades" value="{{ habilidad }}" id="habilidad_{{ habilidad }}">
+                            <label class="form-check-label" for="habilidad_{{ habilidad }}">{{ habilidad }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary">Agregar</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">Agregar Recurso</div>
+        <div class="card-body">
+            <form id="recursoForm">
+                <div class="form-group">
+                    <label>Habilidades:</label><br>
+                    {% for habilidad in habilidades_lista %}
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" name="habilidades" value="{{ habilidad }}" id="recurso_habilidad_{{ habilidad }}">
+                            <label class="form-check-label" for="recurso_habilidad_{{ habilidad }}">{{ habilidad }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary">Agregar</button>
+            </form>
+        </div>
+    </div>
+
+    <h3>Tareas</h3>
+    <div id="tareasList">
+        {% for tarea, detalles in tareas.items() %}
+            <p>{{ tarea }}: {{ ', '.join(detalles.habilidades) }} - {{ detalles.horas_estimadas }}h</p>
+        {% endfor %}
+    </div>
+
+    <h3>Recursos</h3>
+    <div id="recursosList">
+        {% for recurso, detalles in recursos.items() %}
+            <p>{{ recurso }}: {{ ', '.join(detalles.habilidades) }}</p>
+        {% endfor %}
+    </div>
+
+    <button id="ejecutarAlgoritmo" class="btn btn-success">Ejecutar Algoritmo Genético</button>
+
+    <div id="resultados" class="mt-5"></div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script>
+    const habilidades_lista = {{ habilidades_lista | tojson }};
+
+    $('#tareaForm').submit(function(event) {
+        event.preventDefault();
+        $.post('/agregar_tarea', $(this).serialize(), function(response) {
+            location.reload();
+        }).fail(function(response) {
+            alert(response.responseJSON.error);
+        });
+    });
+
+    $('#recursoForm').submit(function(event) {
+        event.preventDefault();
+        $.post('/agregar_recurso', $(this).serialize(), function(response) {
+            location.reload();
+        }).fail(function(response) {
+            alert(response.responseJSON.error);
+        });
+    });
+
+    $('#ejecutarAlgoritmo').click(function() {
+        $.post('/ejecutar_algoritmo', function(resultados) {
+            console.log(resultados); // Verifica los resultados en la consola del navegador
+            mostrarResultados(resultados);
+        }).fail(function(response) {
+            alert(response.responseJSON.error || 'Ocurrió un error al ejecutar el algoritmo.');
+        });
+    });
+
+    function mostrarResultados(resultados) {
+        let resultadosDiv = $('#resultados');
+        resultadosDiv.empty();
+
+        if (!resultados || !resultados.tareas || !resultados.carga_trabajo) {
+            resultadosDiv.append('<p>No se generaron resultados válidos.</p>');
+            return;
+        }
+
+        let tareasTable = '<h3>Resultados de la Asignación</h3>';
+        tareasTable += '<table class="table table-bordered"><thead><tr><th>Tarea</th><th>Recursos</th><th>Total Horas</th><th>Estado</th></tr></thead><tbody>';
+        resultados.tareas.forEach(function(tarea) {
+            tareasTable += `<tr><td>${tarea.tarea}</td><td>${tarea.recursos}</td><td>${tarea.tiempo_real}h / ${tarea.tiempo_estimado}h</td><td>${tarea.estado}</td></tr>`;
+        });
+        tareasTable += '</tbody></table>';
+
+        let recursosTable = '<h3>Carga de Trabajo por Recurso</h3>';
+        recursosTable += '<table class="table table-bordered"><thead><tr><th>Recurso</th>';
+        habilidades_lista.forEach(function(habilidad) {
+            recursosTable += `<th>${habilidad}</th>`;
+        });
+        recursosTable += '</tr></thead><tbody>';
+        resultados.carga_trabajo.forEach(function(recurso) {
+            recursosTable += `<tr><td>${recurso.recurso}</td>`;
+            habilidades_lista.forEach(function(habilidad) {
+                recursosTable += `<td>${recurso[habilidad] || 0}h</td>`;
+            });
+            recursosTable += '</tr>';
+        });
+        recursosTable += '</tbody></table>';
+
+        resultadosDiv.append(tareasTable);
+        resultadosDiv.append(recursosTable);
+    }
+</script>
+</body>
+</html>
