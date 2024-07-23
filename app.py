@@ -4,14 +4,11 @@ import random
 
 app = Flask(__name__)
 
-# Definición inicial de tareas y recursos
 tareas = {}
 recursos = {}
 
-# Variables para las habilidades
 habilidades_lista = ["React", "Python", "Figma", "MySQL", "Next"]
 
-# Parámetros del algoritmo genético
 TAM_POBLACION = 100
 MAX_GENERACIONES = 200
 TASA_MUTACION = 0.05
@@ -59,7 +56,6 @@ def ejecutar_algoritmo():
 
 def crear_individuo():
     individuo = np.zeros((len(recursos), len(habilidades_lista)))
-    total_horas_asignadas = 0
     recurso_keys = list(recursos.keys())
 
     for tarea, detalles in tareas.items():
@@ -82,15 +78,13 @@ def crear_individuo():
                     horas_por_habilidad = horas_disponibles / len(habilidades_validas)
                     for h in habilidades_validas:
                         individuo[i, h] += horas_por_habilidad
-        
-        total_horas_asignadas += min(horas_tarea, np.sum(individuo[:, habilidades_tarea]))
 
-    return individuo, total_horas_asignadas
+    return individuo
 
-def fitness(individuo, total_horas_asignadas):
+
+def fitness(individuo):
     penalizacion = 0
-    
-    # Penalizar si no se cumplen las horas requeridas por tarea
+
     for tarea, detalles in tareas.items():
         horas_requeridas = detalles['horas_estimadas']
         habilidades_tarea = [habilidades_lista.index(h) for h in detalles['habilidades']]
@@ -98,36 +92,34 @@ def fitness(individuo, total_horas_asignadas):
         if horas_asignadas < horas_requeridas:
             penalizacion += (horas_requeridas - horas_asignadas) * 20
 
-    # Penalizar asignaciones a habilidades que la persona no tiene
     for i, recurso in enumerate(recursos):
         habilidades = [habilidades_lista.index(skill) for skill in recursos[recurso]["habilidades"]]
         for j in range(len(habilidades_lista)):
             if j not in habilidades and individuo[i, j] > 0:
                 penalizacion += individuo[i, j] * 30
 
-    # Penalizar si algún recurso excede las 40 horas semanales
     for i in range(len(recursos)):
         horas_recurso = np.sum(individuo[i])
         if horas_recurso > 40:
             penalizacion += (horas_recurso - 40) * 25
 
-    # Recompensar uso equilibrado de habilidades y recursos
     varianza_horas_habilidades = np.var(np.sum(individuo, axis=0))
     varianza_horas_recursos = np.var(np.sum(individuo, axis=1))
-    
-    # Recompensar la utilización de todos los recursos y habilidades
+
     recursos_utilizados = np.sum(np.sum(individuo, axis=1) > 0)
     habilidades_utilizadas = np.sum(np.sum(individuo, axis=0) > 0)
     bonus_utilizacion = (recursos_utilizados / len(recursos) + habilidades_utilizadas / len(habilidades_lista)) * 200
 
     return 2000 - penalizacion - varianza_horas_habilidades * 10 - varianza_horas_recursos * 10 + bonus_utilizacion
 
+
+
 def seleccion_torneo(poblacion, tamano_torneo=3):
     seleccionados = []
     for _ in range(len(poblacion)):
         participantes = random.sample(poblacion, tamano_torneo)
         ganador = max(participantes, key=lambda x: x[1])
-        seleccionados.append(ganador[0])  # Asegurar que solo el individuo sea seleccionado
+        seleccionados.append(ganador[0])
     return seleccionados
 
 def cruce(padre1, padre2):
@@ -138,7 +130,6 @@ def cruce(padre1, padre2):
         else:
             hijo[i] = padre2[i]
     
-    # Asegurar que solo se asignen horas a habilidades válidas y no exceda 40 horas por recurso
     recurso_keys = list(recursos.keys())
     for i, recurso in enumerate(recurso_keys):
         habilidades_validas = [habilidades_lista.index(skill) for skill in recursos[recurso]["habilidades"]]
@@ -146,7 +137,6 @@ def cruce(padre1, padre2):
             if j not in habilidades_validas:
                 hijo[i, j] = 0
         
-        # Ajustar si excede 40 horas
         total_horas = np.sum(hijo[i])
         if total_horas > 40:
             factor = 40 / total_horas
@@ -166,56 +156,44 @@ def mutacion(individuo):
                 if np.sum(individuo[i]) - individuo[i, j] + nuevo_valor <= 40:
                     individuo[i, j] = nuevo_valor
     return individuo
-
 def algoritmo_genetico():
     poblacion = []
     while len(poblacion) < TAM_POBLACION:
-        individuo, total_horas = crear_individuo()
-        if np.sum(individuo) > 0:  # Asegurarse de que el individuo tenga asignaciones
-            poblacion.append((individuo, total_horas))
-    
-    total_horas_asignadas = poblacion[0][1]
+        individuo = crear_individuo()
+        if np.sum(individuo) > 0:
+            poblacion.append((individuo, fitness(individuo)))
     
     for generacion in range(MAX_GENERACIONES):
-        # Evaluar fitness
-        poblacion = [(ind, fitness(ind, total_horas_asignadas)) for ind, _ in poblacion]
+        poblacion = [(ind, fitness(ind)) for ind, _ in poblacion]
         
-        # Ordenar por fitness
         poblacion.sort(key=lambda x: x[1], reverse=True)
         
-        # Imprimir progreso
         if generacion % 10 == 0:
             print(f"Generación {generacion}: Mejor fitness = {poblacion[0][1]}")
         
-        # Poda: mantener el 70% superior y regenerar el 30% restante
         num_mantener = int(TAM_POBLACION * 0.7)
         poblacion_podada = poblacion[:num_mantener]
         
-        # Regenerar el 30% restante
         while len(poblacion_podada) < TAM_POBLACION:
-            nuevo_individuo, _ = crear_individuo()
+            nuevo_individuo = crear_individuo()
             if np.sum(nuevo_individuo) > 0:
-                poblacion_podada.append((nuevo_individuo, total_horas_asignadas))
+                poblacion_podada.append((nuevo_individuo, fitness(nuevo_individuo)))
         
-        # Selección
         seleccionados = seleccion_torneo(poblacion_podada)
         
-        # Cruce y mutación
         nueva_poblacion = []
         while len(nueva_poblacion) < TAM_POBLACION:
             padre1, padre2 = random.sample(seleccionados, 2)
             hijo = cruce(padre1, padre2)
             hijo = mutacion(hijo)
-            nueva_poblacion.append((hijo, total_horas_asignadas))
+            nueva_poblacion.append((hijo, fitness(hijo)))
         
-        # Elitismo: mantener al mejor individuo
         nueva_poblacion[0] = poblacion[0]
         
         poblacion = nueva_poblacion
     
     mejor_individuo = poblacion[0][0]
-    return mejor_individuo, total_horas_asignadas
-
+    return mejor_individuo, np.sum(mejor_individuo)
 def calcular_carga_trabajo(mejor_solucion, total_horas_asignadas):
     resultados = {
         "tareas": [],
@@ -224,18 +202,16 @@ def calcular_carga_trabajo(mejor_solucion, total_horas_asignadas):
 
     recurso_keys = list(recursos.keys())
     
-    # Calcular la carga de trabajo
     for i, recurso in enumerate(recurso_keys):
         carga_recurso = {"recurso": recurso}
         total_horas_recurso = 0
         for j, habilidad in enumerate(habilidades_lista):
-            horas = int(round(float(mejor_solucion[i, j])))  # Redondear al entero más cercano
+            horas = int(round(float(mejor_solucion[i, j])))
             carga_recurso[habilidad] = horas
             total_horas_recurso += horas
         carga_recurso['total_horas'] = total_horas_recurso
         resultados["carga_trabajo"].append(carga_recurso)
     
-    # Asignar tareas basándose en la carga de trabajo calculada
     for tarea, detalles in tareas.items():
         habilidades_requeridas = set(detalles['habilidades'])
         horas_tarea = detalles['horas_estimadas']
@@ -253,11 +229,8 @@ def calcular_carga_trabajo(mejor_solucion, total_horas_asignadas):
             
             if horas_asignadas > 0:
                 recursos_asignados.append(f"{recurso} ({horas_asignadas}h)")
-
-        # Ajustar el margen de tiempo permitido
-        margen_tiempo = int(0.1 * horas_tarea)  # 10% de margen, redondeado a entero
-        estado = "Dentro del tiempo" if abs(tiempo_real - horas_tarea) <= margen_tiempo else "Fuera del tiempo"
-
+        margen_tiempo = int(0.1 * horas_tarea)
+        estado = "Dentro del tiempo" if abs(tiempo_real - horas_tarea) >= margen_tiempo else "Fuera del tiempo"
         resultados["tareas"].append({
             "tarea": tarea,
             "recursos": ', '.join(recursos_asignados),
@@ -265,8 +238,6 @@ def calcular_carga_trabajo(mejor_solucion, total_horas_asignadas):
             "tiempo_estimado": horas_tarea,
             "estado": estado
         })
-
     return resultados
-
 if __name__ == "__main__":
     app.run(debug=True)
